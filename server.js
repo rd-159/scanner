@@ -238,7 +238,7 @@ const HTML = `<!doctype html>
         pushRows(data.freeItems, 'Free Item');
         pushRows(data.lowestPricedItems, 'Lowest Priced');
         return rows.map(row =>
-          row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(',')
+          row.map(value => '"' + String(value).replace(/"/g, '""') + '"').join(',')
         ).join('\n');
       };
 
@@ -257,7 +257,7 @@ const HTML = `<!doctype html>
       exportCsvEl.addEventListener('click', () => {
         if (!lastResult) return;
         const csv = toCsv(lastResult);
-        const name = `${lastResult.domain || 'scan'}-${new Date().toISOString().slice(0,10)}.csv`;
+        const name = (lastResult.domain || 'scan') + '-' + new Date().toISOString().slice(0,10) + '.csv';
         downloadFile(csv, name, 'text/csv;charset=utf-8;');
       });
 
@@ -268,13 +268,15 @@ const HTML = `<!doctype html>
           .concat((lastResult.lowestPricedItems || []).map(item => ({ ...item, _label: 'Lowest Priced' })));
 
         const table = buildTable(items, '');
-        const html = `
-          <html>
-            <head><meta charset="utf-8" /></head>
-            <body>${table.outerHTML}</body>
-          </html>
-        `;
-        const name = `${lastResult.domain || 'scan'}-${new Date().toISOString().slice(0,10)}.xls`;
+        const html = [
+          '<html>',
+          '<head><meta charset="utf-8" /></head>',
+          '<body>',
+          table.outerHTML,
+          '</body>',
+          '</html>'
+        ].join('');
+        const name = (lastResult.domain || 'scan') + '-' + new Date().toISOString().slice(0,10) + '.xls';
         downloadFile(html, name, 'application/vnd.ms-excel');
       });
 
