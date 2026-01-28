@@ -22,3 +22,5 @@ services:
         value: "true"
       - key: SCANNER_PASSWORD
         sync: false
+      - key: USE_PROXY
+        value: "false"

@@ -9,16 +9,27 @@ const readline = require('readline');
 const ProgressBar = require('progress');
 const xml2js = require('xml2js');
 
-// BRIGHT DATA PROXY CONFIGURATION
-const PROXY_CONFIG = {
-    protocol: 'http', // Explicitly set protocol
-    host: 'brd.superproxy.io',
-    port: 33335,
+try {
+    require('dotenv').config();
+} catch (error) {
+    // Optional dependency; ignore if not installed.
+}
+
+const IS_RENDER = Boolean(process.env.RENDER || process.env.RENDER_SERVICE_ID);
+const USE_PROXY = process.env.USE_PROXY
+    ? process.env.USE_PROXY.toLowerCase() === 'true'
+    : !IS_RENDER;
+
+// BRIGHT DATA PROXY CONFIGURATION (optional)
+const PROXY_CONFIG = USE_PROXY ? {
+    protocol: process.env.PROXY_PROTOCOL || 'http',
+    host: process.env.PROXY_HOST || 'brd.superproxy.io',
+    port: Number(process.env.PROXY_PORT || 33335),
     auth: {
-        username: 'brd-customer-hl_b26eb287-zone-resproxy01',
-        password: 'o7l63g2v8qnh'
+        username: process.env.PROXY_USERNAME || 'brd-customer-hl_b26eb287-zone-resproxy01',
+        password: process.env.PROXY_PASSWORD || 'o7l63g2v8qnh'
     }
-};
+} : null;
 
 // Add HTTPS agent configuration for proxy
 const https = require('https');
@@ -727,7 +738,7 @@ class EnhancedShopifyScanner {
                 'Cache-Control': 'no-cache',
                 ...options.headers
             },
-            proxy: PROXY_CONFIG,
+            proxy: PROXY_CONFIG || false,
             httpsAgent: isHttps ? HTTPS_AGENT : null,
             httpAgent: !isHttps ? HTTP_AGENT : null,
             maxRedirects: 2, // Reduced from 3
@@ -1119,7 +1130,7 @@ class EnhancedShopifyScanner {
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
                 },
-                proxy: PROXY_CONFIG,
+                proxy: PROXY_CONFIG || false,
                 httpsAgent: HTTPS_AGENT
             });
             
@@ -1170,7 +1181,7 @@ class EnhancedShopifyScanner {
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
                 },
-                proxy: PROXY_CONFIG,
+                proxy: PROXY_CONFIG || false,
                 httpsAgent: HTTPS_AGENT
             });
             
@@ -1573,7 +1584,7 @@ async function testPrefixesForDomain(domain) {
             const response = await axios.get(`${testUrl}/products.json?limit=1`, {
                 timeout: AXIOS_TIMEOUT,
                 headers: {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'},
-                proxy: PROXY_CONFIG,
+                proxy: PROXY_CONFIG || false,
                 httpsAgent: HTTPS_AGENT
             });
             
