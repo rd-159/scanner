@@ -1569,7 +1569,7 @@ class EnhancedShopifyScanner {
 
 async function testPrefixesForDomain(domain) {
     const prefixes = [
-        '', 'shop.', 'secure.', 'store.', 'checkout.',
+        '', 'www.', 'shop.', 'secure.', 'store.', 'checkout.',
         'us.', 'account.', 'checkout-us.', 'shopify.'
     ];
     
