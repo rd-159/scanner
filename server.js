@@ -1,6 +1,5 @@
 const http = require('http');
 const crypto = require('crypto');
-const mysql = require('mysql2/promise');
 const { runScanForDomain } = require('./shopscanner2');
 
 try {
@@ -10,14 +9,6 @@ try {
 }
 
 const PORT = process.env.PORT || 3000;
-const DB_HOST = process.env.DB_HOST || '';
-const DB_USER = process.env.DB_USER || '';
-const DB_PASSWORD = process.env.DB_PASSWORD || '';
-const DB_NAME = process.env.DB_NAME || '';
-const DB_PORT = Number(process.env.DB_PORT || 3306);
-const DB_AUTO_MIGRATE = (process.env.DB_AUTO_MIGRATE || 'true').toLowerCase() === 'true';
-const DB_TABLE_RAW = process.env.DB_TABLE || 'scan_results';
-const DB_TABLE = DB_TABLE_RAW.replace(/[^a-zA-Z0-9_]/g, '') || 'scan_results';
 const SCANNER_PASSWORD = process.env.SCANNER_PASSWORD || '';
 let scanInProgress = false;
 const activeSessions = new Map();
@@ -55,6 +46,10 @@ const HTML = `<!doctype html>
       <button id="scanButton" type="submit">Run Scan</button>
     </form>
     <div id="status" class="status"></div>
+    <div id="exportBar" style="display:none; margin: 12px 0;">
+      <button id="exportCsv">Export CSV</button>
+      <button id="exportXls">Export XLS</button>
+    </div>
     <div id="results"></div>
     <script>
       const authForm = document.getElementById('authForm');
@@ -65,9 +60,15 @@ const HTML = `<!doctype html>
       const unlockButtonEl = document.getElementById('unlockButton');
       const inputEl = document.getElementById('urlInput');
       const passwordEl = document.getElementById('passwordInput');
+      const exportBarEl = document.getElementById('exportBar');
+      const exportCsvEl = document.getElementById('exportCsv');
+      const exportXlsEl = document.getElementById('exportXls');
+      let lastResult = null;
 
       const clearResults = () => {
         resultsEl.innerHTML = '';
+        exportBarEl.style.display = 'none';
+        lastResult = null;
       };
 
       const setStatus = (text, isError = false) => {
@@ -111,6 +112,171 @@ const HTML = `<!doctype html>
         }
         resultsEl.appendChild(card);
       };
+
+      const buildTable = (items, label) => {
+        const table = document.createElement('table');
+        table.style.width = '100%';
+        table.style.borderCollapse = 'collapse';
+
+        const headRow = document.createElement('tr');
+        ['Type', 'Title', 'Variant', 'Price', 'Available', 'Cart URL', 'Product URL', 'Source', 'Found At'].forEach(text => {
+          const th = document.createElement('th');
+          th.textContent = text;
+          th.style.border = '1px solid #ddd';
+          th.style.padding = '6px';
+          th.style.textAlign = 'left';
+          headRow.appendChild(th);
+        });
+        table.appendChild(headRow);
+
+        items.forEach(item => {
+          const row = document.createElement('tr');
+          const cells = [
+            label,
+            item.title || '',
+            item.variant || '',
+            Number(item.price || 0).toFixed(2),
+            item.available ? 'Yes' : 'No',
+            item.cartUrl || '',
+            item.productUrl || '',
+            item.source || '',
+            item.foundAt || ''
+          ];
+          cells.forEach(text => {
+            const td = document.createElement('td');
+            td.textContent = text;
+            td.style.border = '1px solid #ddd';
+            td.style.padding = '6px';
+            td.style.verticalAlign = 'top';
+            row.appendChild(td);
+          });
+          table.appendChild(row);
+        });
+        return table;
+      };
+
+      const renderResultsTable = (data) => {
+        const items = []
+          .concat((data.freeItems || []).map(item => ({ ...item, _label: 'Free Item' })))
+          .concat((data.lowestPricedItems || []).map(item => ({ ...item, _label: 'Lowest Priced' })));
+
+        const card = document.createElement('div');
+        card.className = 'card';
+        const h3 = document.createElement('h3');
+        h3.textContent = 'Results';
+        card.appendChild(h3);
+
+        if (!items.length) {
+          const p = document.createElement('p');
+          p.className = 'muted';
+          p.textContent = 'No items found.';
+          card.appendChild(p);
+        } else {
+          const table = document.createElement('table');
+          table.style.width = '100%';
+          table.style.borderCollapse = 'collapse';
+
+          const headRow = document.createElement('tr');
+          ['Type', 'Title', 'Variant', 'Price', 'Available', 'Cart URL', 'Product URL', 'Source', 'Found At'].forEach(text => {
+            const th = document.createElement('th');
+            th.textContent = text;
+            th.style.border = '1px solid #ddd';
+            th.style.padding = '6px';
+            th.style.textAlign = 'left';
+            headRow.appendChild(th);
+          });
+          table.appendChild(headRow);
+
+          items.forEach(item => {
+            const row = document.createElement('tr');
+            const cells = [
+              item._label || '',
+              item.title || '',
+              item.variant || '',
+              Number(item.price || 0).toFixed(2),
+              item.available ? 'Yes' : 'No',
+              item.cartUrl || '',
+              item.productUrl || '',
+              item.source || '',
+              item.foundAt || ''
+            ];
+            cells.forEach(text => {
+              const td = document.createElement('td');
+              td.textContent = text;
+              td.style.border = '1px solid #ddd';
+              td.style.padding = '6px';
+              td.style.verticalAlign = 'top';
+              row.appendChild(td);
+            });
+            table.appendChild(row);
+          });
+
+          card.appendChild(table);
+        }
+        resultsEl.appendChild(card);
+      };
+
+      const toCsv = (data) => {
+        const rows = [
+          ['Type','Title','Variant','Price','Available','Cart URL','Product URL','Source','Found At']
+        ];
+        const pushRows = (items, label) => {
+          (items || []).forEach(item => {
+            rows.push([
+              label,
+              item.title || '',
+              item.variant || '',
+              Number(item.price || 0).toFixed(2),
+              item.available ? 'Yes' : 'No',
+              item.cartUrl || '',
+              item.productUrl || '',
+              item.source || '',
+              item.foundAt || ''
+            ]);
+          });
+        };
+        pushRows(data.freeItems, 'Free Item');
+        pushRows(data.lowestPricedItems, 'Lowest Priced');
+        return rows.map(row =>
+          row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(',')
+        ).join('\n');
+      };
+
+      const downloadFile = (content, filename, mime) => {
+        const blob = new Blob([content], { type: mime });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+      };
+
+      exportCsvEl.addEventListener('click', () => {
+        if (!lastResult) return;
+        const csv = toCsv(lastResult);
+        const name = `${lastResult.domain || 'scan'}-${new Date().toISOString().slice(0,10)}.csv`;
+        downloadFile(csv, name, 'text/csv;charset=utf-8;');
+      });
+
+      exportXlsEl.addEventListener('click', () => {
+        if (!lastResult) return;
+        const items = []
+          .concat((lastResult.freeItems || []).map(item => ({ ...item, _label: 'Free Item' })))
+          .concat((lastResult.lowestPricedItems || []).map(item => ({ ...item, _label: 'Lowest Priced' })));
+
+        const table = buildTable(items, '');
+        const html = `
+          <html>
+            <head><meta charset="utf-8" /></head>
+            <body>${table.outerHTML}</body>
+          </html>
+        `;
+        const name = `${lastResult.domain || 'scan'}-${new Date().toISOString().slice(0,10)}.xls`;
+        downloadFile(html, name, 'application/vnd.ms-excel');
+      });
 
       const setUnlocked = (unlocked) => {
         if (unlocked) {
@@ -181,6 +347,7 @@ const HTML = `<!doctype html>
           }
 
           setStatus('Scan complete.');
+          lastResult = data;
           addCard('Summary', [
             'Domain: ' + data.domain,
             'Scanned URL: ' + data.scannedUrl,
@@ -188,25 +355,13 @@ const HTML = `<!doctype html>
             'Duration: ' + data.durationSeconds + 's'
           ]);
 
-          const freeItems = (data.freeItems || []).map(item =>
-            item.title + ' - $' + Number(item.price).toFixed(2)
-          );
-          addListCard('Free Items', freeItems);
-
-          const lowestPriced = (data.lowestPricedItems || []).map(item =>
-            item.title + ' - $' + Number(item.price).toFixed(2)
-          );
-          addListCard('Lowest Priced Items', lowestPriced);
+          renderResultsTable(data);
 
           addCard('Files', [
             'Text: ' + data.outputFile,
             'CSV: ' + data.csvFile
           ]);
-          addCard('Database', [
-            'Saved: ' + (data.savedToDatabase ? 'Yes' : 'No'),
-            'Key: ' + (data.databaseKey || 'N/A'),
-            'Table: ' + (data.databaseTable || 'N/A')
-          ]);
+          exportBarEl.style.display = '';
         } catch (error) {
           setStatus('Scan failed: ' + error.message, true);
         } finally {
@@ -287,85 +442,6 @@ function isAuthenticated(req) {
   return true;
 }
 
-let dbPool = null;
-
-function isDbConfigured() {
-  return DB_HOST && DB_USER && DB_PASSWORD && DB_NAME;
-}
-
-function getDbPool() {
-  if (!isDbConfigured()) return null;
-  if (!dbPool) {
-    dbPool = mysql.createPool({
-      host: DB_HOST,
-      user: DB_USER,
-      password: DB_PASSWORD,
-      database: DB_NAME,
-      port: DB_PORT,
-      connectionLimit: 5,
-      charset: 'utf8mb4'
-    });
-  }
-  return dbPool;
-}
-
-async function ensureTable(pool) {
-  if (!DB_AUTO_MIGRATE) return;
-  const sql = `
-    CREATE TABLE IF NOT EXISTS \`${DB_TABLE}\` (
-      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-      domain VARCHAR(255) NOT NULL,
-      scan_date DATE NOT NULL,
-      scan_timestamp DATETIME NOT NULL,
-      scanned_url VARCHAR(2048) NULL,
-      free_items_count INT NOT NULL DEFAULT 0,
-      duration_seconds DECIMAL(6,1) NULL,
-      output_file VARCHAR(1024) NULL,
-      csv_file VARCHAR(1024) NULL,
-      result_json JSON NOT NULL,
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (id),
-      KEY idx_domain_date (domain, scan_date),
-      KEY idx_scan_timestamp (scan_timestamp)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-  `;
-  await pool.query(sql);
-}
-
-async function saveScanResult(result) {
-  const pool = getDbPool();
-  if (!pool) {
-    return { saved: false, reason: 'Database not configured' };
-  }
-
-  await ensureTable(pool);
-
-  const now = new Date();
-  const scanDate = now.toISOString().slice(0, 10);
-  const scanTimestamp = now.toISOString().slice(0, 19).replace('T', ' ');
-
-  const sql = `
-    INSERT INTO \`${DB_TABLE}\`
-      (domain, scan_date, scan_timestamp, scanned_url, free_items_count, duration_seconds, output_file, csv_file, result_json)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `;
-
-  const payload = JSON.stringify(result);
-  await pool.execute(sql, [
-    result.domain,
-    scanDate,
-    scanTimestamp,
-    result.scannedUrl || null,
-    Number(result.freeItemsFound || 0),
-    result.durationSeconds || null,
-    result.outputFile || null,
-    result.csvFile || null,
-    payload
-  ]);
-
-  return { saved: true, key: `${result.domain}-${scanTimestamp}`, table: DB_TABLE };
-}
-
 const server = http.createServer(async (req, res) => {
   const reqUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
 
@@ -417,13 +493,6 @@ const server = http.createServer(async (req, res) => {
       const result = await runScanForDomain(url);
       if (!result.success) {
         return sendJson(res, 400, result);
-      }
-      const dbResult = await saveScanResult(result);
-      result.savedToDatabase = dbResult.saved;
-      result.databaseKey = dbResult.key || null;
-      result.databaseTable = dbResult.table || null;
-      if (!dbResult.saved) {
-        result.databaseError = dbResult.reason || 'Failed to save to database';
       }
       return sendJson(res, 200, result);
     } catch (error) {
