@@ -1,0 +1,6 @@
+node_modules/
+.env
+scanner-results/
+scan-history.csv
+scan-summary.csv
+*.log

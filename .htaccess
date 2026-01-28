@@ -1,0 +1,4 @@
+PassengerEnabled on
+PassengerAppRoot /home/kount/scan.cutmaterials.com
+PassengerAppType node
+PassengerStartupFile app.js
